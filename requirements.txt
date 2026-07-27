@@ -1,0 +1,4 @@
+requests>=2.31
+
+# Optional: needed only for `--quora-engine playwright`
+# playwright>=1.40
