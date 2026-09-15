@@ -58,7 +58,7 @@ Edit `.env`:
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | Defaults to a local SQLite file — no setup needed. |
+| `DATABASE_URL` | yes | Postgres connection string. Use a local Postgres, `docker run -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres`, or a free Neon/Vercel Postgres branch. |
 | `NEXTAUTH_SECRET` | yes | Any long random string. Generate with `openssl rand -hex 32`. |
 | `NEXTAUTH_URL` | yes | `http://localhost:3000` for local dev. |
 | `OPENAI_API_KEY` | yes | Needed for chat + embeddings. Get one at platform.openai.com. |
@@ -74,7 +74,7 @@ Edit `.env`:
 ### 3. Set up the database
 
 ```bash
-npm run prisma:migrate   # creates prisma/dev.db and applies the schema
+npm run prisma:migrate   # applies the schema to DATABASE_URL
 npm run prisma:seed      # seeds the global system prompt + an admin account
 ```
 
@@ -129,11 +129,11 @@ that account's plan.
 ## Architecture notes
 
 - **RAG**: documents are chunked (~1000 chars, 150 char overlap), embedded
-  with OpenAI embeddings, and stored as JSON vectors in SQLite (`Chunk`
-  model). Retrieval does an in-process cosine-similarity search — no vector
-  database needed at this scale. If you outgrow SQLite's per-request scan,
-  swap `lib/embeddings.js`'s `retrieveContext` for a Postgres + `pgvector`
-  (or a hosted vector DB) query — the rest of the app is unaffected.
+  with OpenAI embeddings, and stored as JSON vectors in a `Chunk` table in
+  Postgres. Retrieval does an in-process cosine-similarity search — no
+  vector database needed at this scale. If you outgrow that per-request
+  scan, swap `lib/embeddings.js`'s `retrieveContext` for a `pgvector` query
+  (or a hosted vector DB) — the rest of the app is unaffected.
 - **Streaming chat**: `/api/chat` streams the OpenAI completion as
   Server-Sent Events over a plain `fetch` (no extra client library).
 - **Usage limits**: `lib/usage.js` tracks a per-user, per-day message
@@ -142,26 +142,37 @@ that account's plan.
 - **Auth**: NextAuth credentials provider + JWT sessions; passwords hashed
   with bcrypt. `middleware.js` protects `/chat`, `/dashboard`, and `/admin`.
 
-## Deploying
+## Deploying on Vercel
 
-This is a standard Next.js + Prisma app, so it deploys anywhere that runs
-Node.js:
+The `build` script (`prisma migrate deploy && next build`) applies pending
+migrations automatically on every deploy, so there's no separate migration
+step.
 
-1. **Database**: swap SQLite for Postgres in production (change
-   `datasource db { provider = "postgresql" }` in `prisma/schema.prisma` and
-   set `DATABASE_URL` to your Postgres connection string), then run
-   `npx prisma migrate deploy`.
-2. **Hosting**: Vercel, Render, Railway, or Fly.io all work well with
-   Next.js. Set all the environment variables from `.env.example` in your
-   host's dashboard.
-3. **Stripe webhook**: point your production webhook endpoint at
-   `https://your-domain.com/api/stripe/webhook` and switch to live-mode keys
-   when you're ready to charge for real.
-4. **Seed the admin account** once in production with
-   `ADMIN_EMAIL`/`ADMIN_PASSWORD` set, then run `npm run prisma:seed`
-   against the production database (or create the admin manually and update
-   their `role` to `ADMIN` in the database).
+1. **Create a Postgres database.** In the Vercel dashboard: Project →
+   Storage → Create Database → Postgres (Neon-backed). This automatically
+   adds a `DATABASE_URL` (or `POSTGRES_URL` / `POSTGRES_PRISMA_URL`)
+   environment variable to the project — if Vercel names it something other
+   than `DATABASE_URL`, add a `DATABASE_URL` env var yourself pointing at the
+   same connection string (Prisma reads `DATABASE_URL` specifically).
+2. **Set the rest of the environment variables** under Project → Settings →
+   Environment Variables, for both "Production" and "Preview": every
+   variable in `.env.example` except `DATABASE_URL` (already set in step 1).
+   Set `NEXTAUTH_URL` and `NEXT_PUBLIC_APP_URL` to your Vercel deployment URL
+   (e.g. `https://your-project.vercel.app`).
+3. **Deploy.** Push to the connected Git branch (or trigger a deploy from
+   the dashboard) — the build runs migrations and builds the app.
+4. **Seed the admin account** once, from your machine, pointed at the
+   production database:
+   ```bash
+   DATABASE_URL="<production connection string>" ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=... npm run prisma:seed
+   ```
+   (or create a normal account through `/register` and flip its `role` to
+   `ADMIN` directly in the database).
+5. **Stripe webhook**: point a webhook endpoint at
+   `https://your-domain.com/api/stripe/webhook`, copy its signing secret into
+   `STRIPE_WEBHOOK_SECRET`, and switch to live-mode keys only when you're
+   ready to charge for real.
 
-Ask for help with the specific target (Vercel, Railway, a VPS, etc.) when
-you're ready — the app has no platform-specific code, so the deploy is
-mostly "set env vars, run migrations, `npm run build && npm start`."
+Other hosts (Render, Railway, Fly.io, a VPS) work the same way — set the env
+vars, point `DATABASE_URL` at a reachable Postgres instance, and run
+`npm run build && npm start`.
