@@ -6,7 +6,7 @@ Method: this chat coordinates and builds what it holds the context for; a fresh 
 
 ## Resume here
 <!-- Updated at every gate and before every handoff. A new chat starts with "STATE.md'den devam et" / "Continue from STATE.md". -->
-- **Phase:** 4 Style frame (first test stills rendered, look not right yet)
+- **Phase:** 4 Style frame done as progress stills (review/sheet4.png: eight shots, one frame each). Sea haze, far tower and lips now read; hand in S04 and the keeper's face are still crude. Next: type, audio, animatic, draft.
 - **Pace:** through
 - **Approved gates:** roadmap, script
 - **Open notes:** none (notes/round-N.md)

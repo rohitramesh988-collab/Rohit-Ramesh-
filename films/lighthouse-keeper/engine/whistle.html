@@ -29,7 +29,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 2500);
 const [bgHex, , , , lampHex] = look.palette;
 const BG = new THREE.Color(bgHex), LAMP = new THREE.Color(lampHex);
-scene.fog = new THREE.FogExp2(BG.getHex(), 0.0042);
+scene.fog = new THREE.FogExp2(0xb4a7a3, 0.0021);
 
 // ----------------------------------------------------------------- helpers: seeded noise, smoothing
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -67,8 +67,8 @@ const SUN_AZ = Math.atan2(-0.48 + 0.0, -0.88) ;                                 
 const sunDir = new THREE.Vector3();
 const skyMat = new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { uSun: { value: new THREE.Vector3(0, 0, -1) }, uWarm: { value: 0 }, uTop: { value: new THREE.Color('#9fa6ab') },
-              uMid: { value: new THREE.Color('#C9B8B2') }, uHor: { value: new THREE.Color('#D9A38F') } },
+  uniforms: { uSun: { value: new THREE.Vector3(0, 0, -1) }, uWarm: { value: 0 }, uTop: { value: new THREE.Color('#858c92') },
+              uMid: { value: new THREE.Color('#a89a97') }, uHor: { value: new THREE.Color('#c58f7e') } },
   vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: `varying vec3 vDir; uniform vec3 uSun; uniform float uWarm; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uHor;
     void main(){ float h = clamp(vDir.y, -0.2, 1.0);
@@ -80,7 +80,7 @@ const skyMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(c, 1.0); }`,
 });
 const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat); sky.frustumCulled = false; scene.add(sky);
-const env = skyLight(renderer, scene, { elevationDeg: 8, azimuthDeg: 200, turbidity: 8, rayleigh: 1.2, intensity: 0.35 });
+const env = skyLight(renderer, scene, { elevationDeg: 8, azimuthDeg: 200, turbidity: 8, rayleigh: 1.2, intensity: 0.1 });
 
 // ----------------------------------------------------------------- lights
 const key = new THREE.DirectionalLight(0xffd9b8, 0.4);
@@ -93,7 +93,7 @@ const lampLight = new THREE.PointLight(LAMP.getHex(), 0, 0, 2); lampLight.positi
 // ----------------------------------------------------------------- the sea (swell displaced in JS, a pure function of time)
 const SEA = new THREE.PlaneGeometry(1400, 1400, 170, 170); SEA.rotateX(-Math.PI / 2);
 const seaPos = SEA.attributes.position, seaBase = Float32Array.from(seaPos.array);
-const seaMat = new THREE.MeshStandardMaterial({ color: '#7d8d96', roughness: 0.3, metalness: 0.15, envMapIntensity: 1.1 });
+const seaMat = new THREE.MeshStandardMaterial({ color: '#4f5f69', roughness: 0.5, metalness: 0.0, envMapIntensity: 0.4 });
 const sea = new THREE.Mesh(SEA, seaMat); sea.receiveShadow = true; scene.add(sea);
 const swell = (x, z, t) => 0.38 * Math.sin(0.05 * x + 0.032 * z + 0.9 * t) + 0.26 * Math.sin(0.092 * z - 0.071 * x + 1.3 * t + 1.7)
   + 0.1 * Math.sin(0.23 * x + 0.19 * z + 2.1 * t + 0.4);
@@ -120,7 +120,7 @@ function makeRock(radius, squash, seed, amp) {
   m.castShadow = m.receiveShadow = true; return m;
 }
 const rockA = makeRock(16, 0.46, 1.3, 0.55); rockA.position.set(0, -1.4, 0); scene.add(rockA);
-const rockB = makeRock(9, 0.8, 5.7, 0.6); rockB.position.set(-96, -1, -176); scene.add(rockB);
+const rockB = makeRock(13, 0.8, 5.7, 0.6); rockB.position.set(-122, -1, -165); scene.add(rockB);
 const rockC = makeRock(5, 0.7, 9.1, 0.5); rockC.position.set(26, -0.8, 12); scene.add(rockC);       // a skerry near the keeper's rock
 const foam = new THREE.Mesh(new THREE.RingGeometry(14.5, 21, 64, 1), new THREE.MeshBasicMaterial({
   map: new THREE.CanvasTexture(paint(256, (g, s) => { for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(255,255,255,${0.1 + rand(i) * 0.35})`;
@@ -177,13 +177,13 @@ const lampLamp = new THREE.PointLight(0xffe0b0, 0, 0, 2); lampLamp.position.set(
 
 // ----------------------------------------------------------------- the far tower on the other rock: dark, unlit
 const farTower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.2, 14, 24), new THREE.MeshStandardMaterial({ color: '#35373b', roughness: 0.9 }));
-farTower.position.set(-96, 6.5, -176); farTower.castShadow = true; scene.add(farTower);
-const farTop = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 1.7, 0.4, 24), dark); farTop.position.set(-96, 13.8, -176); scene.add(farTop);
-const farRoom = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 16), new THREE.MeshStandardMaterial({ color: '#202225', roughness: 0.4 })); farRoom.position.set(-96, 15, -176); scene.add(farRoom);
-const farRoof = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.2, 16), dark); farRoof.position.set(-96, 16.5, -176); scene.add(farRoof);
+farTower.position.set(-122, 8.5, -165); farTower.castShadow = true; scene.add(farTower);
+const farTop = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 1.7, 0.4, 24), dark); farTop.position.set(-122, 15.8, -165); scene.add(farTop);
+const farRoom = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 16), new THREE.MeshStandardMaterial({ color: '#202225', roughness: 0.4 })); farRoom.position.set(-122, 17, -165); scene.add(farRoom);
+const farRoof = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.2, 16), dark); farRoof.position.set(-122, 18.5, -165); scene.add(farRoof);
 
 // ----------------------------------------------------------------- the keeper (a figure built from named parts: boots, coat, scarf, cap, hands, lips)
-const KEEP_AT = new THREE.Vector3(-1.2, 20.13, -2.2);                                 // on the gallery, facing out toward the far rock
+const KEEP_AT = new THREE.Vector3(-1.49, 20.13, -2.01);                                // on the gallery, facing out toward the far rock
 function makeKeeper() {
   const grp = new THREE.Group();
   const coat = new THREE.MeshStandardMaterial({ color: '#2b3038', roughness: 0.9 }), skin = new THREE.MeshStandardMaterial({ color: '#b48f7a', roughness: 0.6 });
@@ -197,7 +197,11 @@ function makeKeeper() {
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), skin); nose.position.set(0, -0.005, 0.115); nose.scale.set(1, 1.3, 1.4); headG.add(nose);
   const cap = new THREE.Mesh(new THREE.SphereGeometry(0.125, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat); cap.position.y = 0.03; cap.scale.set(1.0, 0.9, 1.05); headG.add(cap);
   const peak = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.015, 0.09), capMat); peak.position.set(0, 0.05, 0.13); headG.add(peak);
-  const lips = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.0085, 8, 14), new THREE.MeshStandardMaterial({ color: '#8c4b46', roughness: 0.5 })); lips.position.set(0, -0.062, 0.112); headG.add(lips);
+  const lipMat = new THREE.MeshStandardMaterial({ color: '#8c4b46', roughness: 0.5, side: THREE.DoubleSide });   // pursed lips: a short tube along the face's axis, readable in profile
+  const lips = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.019, 0.026, 14, 1, true), lipMat); lips.rotation.x = Math.PI / 2; lips.position.set(0, -0.058, 0.118); headG.add(lips);
+  const lipHole = new THREE.Mesh(new THREE.CircleGeometry(0.0085, 12), new THREE.MeshBasicMaterial({ color: '#2a1512' })); lipHole.position.set(0, -0.058, 0.1315); headG.add(lipHole);
+  const chin = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 10), skin); chin.position.set(0, -0.098, 0.082); chin.scale.set(1.05, 0.8, 1); headG.add(chin);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.035), skin); brow.position.set(0, 0.03, 0.098); headG.add(brow);
   const scarf = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.55, 1, 10), new THREE.MeshStandardMaterial({ color: '#7a3b32', roughness: 0.95, side: THREE.DoubleSide }));
   scarf.position.set(0.14, 1.5, -0.1); grp.add(scarf);
   const arms = [];
@@ -219,7 +223,7 @@ const scarfGeo = keeper.userData.scarf.geometry, scarfBase = Float32Array.from(s
 const IN = new THREE.Vector3(400, 0, 0);
 const tallyCanvas = paint(1024, (g, s) => {
   const img = g.createImageData(s, s);
-  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) { const n = fbm(x / s * 6, y / s * 6, 3.3, 5), k = (y * s + x) * 4, v = 196 + (n - 0.5) * 70 + hash3(x, y, 2) * 10;
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) { const n = fbm(x / s * 6, y / s * 6, 3.3, 5), k = (y * s + x) * 4, v = 150 + (n - 0.5) * 60 + hash3(x, y, 2) * 10;
     img.data[k] = v; img.data[k + 1] = v * 0.97; img.data[k + 2] = v * 0.9; img.data[k + 3] = 255; }
   g.putImageData(img, 0, 0);
   g.lineCap = 'round'; g.strokeStyle = 'rgba(70,58,50,0.85)'; g.lineWidth = 3;
@@ -242,9 +246,11 @@ const oilBody = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.14, 12),
 const oilFlame = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffd9a0', fog: false })); oilFlame.scale.set(1, 1.7, 1); oilFlame.position.copy(oil.position); scene.add(oilFlame);
 const fingerG = new THREE.Group(); scene.add(fingerG);
 const fingerMat = new THREE.MeshStandardMaterial({ color: '#b48f7a', roughness: 0.6 });
-const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.1, 4, 8), fingerMat); finger.rotation.x = Math.PI / 2 - 0.5; finger.position.set(0, 0, 0.1); fingerG.add(finger);
-const palm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.13), fingerMat); palm.position.set(0, 0.05, 0.22); palm.rotation.x = 0.2; fingerG.add(palm);
-const wrist = new THREE.Mesh(new THREE.CapsuleGeometry(0.036, 0.3, 4, 8), new THREE.MeshStandardMaterial({ color: '#2b3038', roughness: 0.9 })); wrist.position.set(0, 0.12, 0.45); wrist.rotation.x = 1.0; fingerG.add(wrist);
+// the fingertip sits at the group's origin, touching the wall; the hand and sleeve trail back toward the camera
+const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.1, 4, 8), fingerMat); finger.rotation.x = Math.PI / 2 - 0.45; finger.position.set(0, 0.03, 0.05); fingerG.add(finger);
+const palm = new THREE.Mesh(new THREE.CapsuleGeometry(0.036, 0.06, 4, 10), fingerMat); palm.position.set(0.0, 0.1, 0.16); palm.rotation.x = -0.55; fingerG.add(palm);
+const wrist = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.35, 4, 8), new THREE.MeshStandardMaterial({ color: '#2b3038', roughness: 0.9 })); wrist.position.set(0.02, 0.2, 0.35); wrist.rotation.x = -0.9; fingerG.add(wrist);
+fingerG.scale.setScalar(2.2);
 // dust in the shaft of window light
 const DUST = 220, dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST * 3), 3));
 const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: '#fff3dd', size: 0.012, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })); dust.frustumCulled = false; scene.add(dust);
@@ -276,19 +282,20 @@ const WHISTLES = [[0.3, 1.2], [3.2, 4.6], [6.3, 7.2], [11.0, 12.0], [15.0, 16.0]
 const speaking = (t) => { for (const [a, b] of WHISTLES) if (t >= a && t <= b) return Math.sin((t - a) / (b - a) * Math.PI); return 0; };
 
 const P = (x, y, z) => new THREE.Vector3(x, y, z);
-const F = new THREE.Vector3(-0.48, 0, -0.88).normalize();                              // facing out toward the far rock
+const F = new THREE.Vector3(-0.595, 0, -0.804).normalize();                             // facing out toward the far rock
 const HEAD = KEEP_AT.clone().add(P(0, 1.74, 0));
+const SIDE = new THREE.Vector3(-F.z, 0, F.x).normalize();                           // perpendicular to F: the keeper's left, seen in profile
 const hh = (t, a, s = 0) => P(Math.sin(t * 1.7 + s) + 0.5 * Math.sin(t * 3.1 + s * 2), Math.sin(t * 1.3 + s * 3) + 0.4 * Math.sin(t * 2.6 + s), 0.5 * Math.sin(t * 2.2 + s * 4)).multiplyScalar(a);
 // each shot: [start, end, from{pos,look,fov}, to{pos,look,fov}, handheld amount, dof{on,focus,range}, bloom]
 const SHOTS = [
-  [0, 6, { p: P(-0.35, 21.18, 0.68), l: P(-1.12, 21.06, 0), f: 34 }, { p: P(-0.92, 21.82, 0.62), l: P(-0.92, 21.8, 0.0), f: 26 }, 0.012, { on: 1, focus: [0.8, 0.62], range: 0.35 }, 1],
+  [0, 6, { p: P(-0.2, 21.7, 2.3), l: P(-1.0, 21.55, 0), f: 34 }, { p: P(-0.98, 21.84, 0.9), l: P(-0.92, 21.8, 0.0), f: 22 }, 0.01, { on: 1, focus: [2.0, 0.9], range: 0.6 }, 1],
   [6, 14, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, { p: P(53, 5, 99), l: P(-8, 12.6, -62), f: 15.5 }, 0.0, { on: 0 }, 1],
-  [14, 22, { p: P(1.6, 20.95, -3.7).add(F.clone().multiplyScalar(-0.9)), l: KEEP_AT.clone().add(P(0, 1.52, 0)), f: 32 }, { p: P(1.6, 20.95, -3.7).add(F.clone().multiplyScalar(0.7)), l: KEEP_AT.clone().add(P(0, 1.5, 0)), f: 32 }, 0.018, { on: 1, focus: [3.7, 3.7], range: 5 }, 1],
+  [14, 22, { p: P(1.6, 21.75, -3.7).add(F.clone().multiplyScalar(-0.9)), l: KEEP_AT.clone().add(P(0, 1.45, 0)), f: 32 }, { p: P(1.6, 21.75, -3.7).add(F.clone().multiplyScalar(0.7)), l: KEEP_AT.clone().add(P(0, 1.45, 0)), f: 32 }, 0.018, { on: 1, focus: [3.7, 3.7], range: 5 }, 0],
   [22, 30, { p: IN.clone().add(P(-1.6, 1.7, 2.6)), l: IN.clone().add(P(-0.6, 1.7, 0)), f: 30 }, { p: IN.clone().add(P(0.6, 1.62, 2.4)), l: IN.clone().add(P(0.9, 1.65, 0)), f: 30 }, 0.008, { on: 1, focus: [2.7, 2.5], range: 1.8 }, 0],
   [30, 38, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, 0.0, { on: 0 }, 1],
   [38, 46, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(3.6)).add(P(0, 0.35, 0)), l: KEEP_AT.clone().add(P(0, 1.5, 0)), f: 36 }, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(3.0)).add(P(0.2, 0.3, 0)), l: KEEP_AT.clone().add(P(0, 1.55, 0)), f: 34 }, 0.06, { on: 1, focus: [3.6, 3.0], range: 4 }, 1],
-  [46, 54, { p: HEAD.clone().add(F.clone().multiplyScalar(0.85)).add(P(0.04, -0.03, 0)), l: HEAD.clone().add(P(0, -0.06, 0)), f: 24 }, { p: HEAD.clone().add(F.clone().multiplyScalar(0.72)).add(P(0.02, -0.02, 0)), l: HEAD.clone().add(P(0, -0.062, 0)), f: 22 }, 0.01, { on: 1, focus: [0.86, 0.73], range: 0.28 }, 1],
-  [54, 60, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(-1.5)).add(P(0.35, 0.95, 0)), l: KEEP_AT.clone().add(F.clone().multiplyScalar(40)).add(P(0, 3.5, 0)), f: 36 }, { p: P(1.9, 22.3, 2.6), l: KEEP_AT.clone().add(F.clone().multiplyScalar(40)).add(P(0, 4.5, 0)), f: 40 }, 0.01, { on: 0 }, 1],
+  [46, 54, { p: HEAD.clone().add(SIDE.clone().multiplyScalar(0.85)).add(P(0, -0.02, 0)), l: HEAD.clone().add(F.clone().multiplyScalar(0.07)).add(P(0, -0.06, 0)), f: 24 }, { p: HEAD.clone().add(SIDE.clone().multiplyScalar(0.7)).add(P(0, -0.03, 0)), l: HEAD.clone().add(F.clone().multiplyScalar(0.075)).add(P(0, -0.062, 0)), f: 20 }, 0.008, { on: 1, focus: [0.85, 0.7], range: 0.22 }, 1],
+  [54, 60, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(-0.5)).add(SIDE.clone().multiplyScalar(1.4)).add(P(0, 0.95, 0)), l: KEEP_AT.clone().add(F.clone().multiplyScalar(14)).add(P(0, 2.2, 0)), f: 40 }, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(-0.3)).add(SIDE.clone().multiplyScalar(4.2)).add(P(0, 1.7, 0)), l: KEEP_AT.clone().add(F.clone().multiplyScalar(22)).add(P(0, 3.2, 0)), f: 48 }, 0.01, { on: 0 }, 1],
 ];
 const shotAt = (t) => SHOTS.find((s) => t < s[1]) || SHOTS[SHOTS.length - 1];
 const only = q.get('shot') != null ? +q.get('shot') : null;
@@ -299,14 +306,14 @@ const lk = buildLook({ renderer, scene, camera, look, fps: FPS, seed: SEED, setT
 function setTime(t, frame) {
   // --- sun and sky
   const w = warmth(t), el = lerp(-0.045, 0.045, sstep(44, 60, t));
-  sunDir.set(-0.48 + 0.22, el, -0.88).normalize();
+  sunDir.set(F.x + 0.2 * SIDE.x, el, F.z + 0.2 * SIDE.z).normalize();
   skyMat.uniforms.uSun.value.copy(sunDir); skyMat.uniforms.uWarm.value = 0.1 + 0.9 * w;
   key.position.copy(sunDir).multiplyScalar(110).add(P(0, 10, 0)); key.target.position.set(0, 14, 0);
   key.intensity = 0.35 + 2.4 * w; key.color.setRGB(1, 0.86 - 0.12 * w, 0.72 - 0.2 * w);
   hemi.intensity = 0.55 + 0.15 * w;
   // --- lamp
   const L = lampLevel(t), flick = 1 + 0.03 * Math.sin(t * 31.0) * L;
-  lensMat.emissiveIntensity = 3.2 * L * flick; lampLight.intensity = 1700 * L; lampLamp.intensity = 90 * L;
+  lensMat.emissiveIntensity = 3.2 * L * flick; lampLight.intensity = 110 * L; lampLamp.intensity = 6 * L;
   beamGroup.rotation.y = t * (Math.PI * 2 / 7); beamMat.opacity = 0.075 * L;
   // --- sea and rocks
   updateSea(t);
@@ -318,7 +325,7 @@ function setTime(t, frame) {
   keeper.position.copy(kPos); keeper.rotation.y = yaw;
   const ud = keeper.userData, sp = speaking(t), breath = Math.sin(t * 1.6) * 0.004;
   ud.torso.scale.set(1.15 + breath * 3, 1 + breath * 2, 0.8); ud.headG.rotation.x = -0.05 * sp + 0.02 * Math.sin(t * 0.8); ud.headG.rotation.y = 0.04 * Math.sin(t * 0.5);
-  ud.lips.scale.set(1 - 0.35 * sp, 1 - 0.35 * sp, 1); ud.lips.position.z = 0.112 + 0.006 * sp;
+  ud.lips.scale.set(1 - 0.4 * sp, 1 + 0.6 * sp, 1 - 0.4 * sp); ud.lips.position.z = 0.118 + 0.004 * sp;
   // arms: S01 reaches the lever; S06-S07 hands cupped at the mouth; otherwise resting on the rail
   let raise = 0, lev = 0;
   if (inLamp) { raise = 0.55 * sstep(0.2, 1.1, t) * (1 - sstep(2.4, 3.2, t)); lev = sstep(1.2, 2.3, t); }
@@ -338,9 +345,9 @@ function setTime(t, frame) {
   sp2.needsUpdate = true;
   // --- interior props
   const fy = 1.66 + 0.0, fx = lerp(IN.x - 1.0, IN.x + 1.15, sstep(23.4, 29, t));
-  fingerG.position.set(fx, fy + 0.02 * Math.sin(t * 2.3), IN.z + 0.05); fingerG.rotation.set(0, 0, 0);
+  fingerG.position.set(fx, fy + 0.02 * Math.sin(t * 2.3), IN.z + 0.02); fingerG.rotation.set(0, 0, 0);
   oil.intensity = (t >= 22 && t < 30 ? 7 : 0) * (1 + 0.06 * Math.sin(t * 17) + 0.04 * Math.sin(t * 29.3));
-  winGlow.intensity = t >= 22 && t < 30 ? 55 : 0; oilFlame.scale.set(1, 1.7 + 0.2 * Math.sin(t * 19), 1);
+  winGlow.intensity = t >= 22 && t < 30 ? 22 : 0; oilFlame.scale.set(1, 1.7 + 0.2 * Math.sin(t * 19), 1);
   const dp = dustGeo.attributes.position;
   for (let i = 0; i < DUST; i++) { const s = rand(i * 3.7), a = (t * (0.02 + 0.03 * rand(i + 2)) + s * 9) % 1;
     dp.array[i * 3] = IN.x - 2.0 + a * 3.8 + 0.1 * Math.sin(t * 0.6 + i); dp.array[i * 3 + 1] = 0.7 + rand(i + 5) * 2.8 + 0.08 * Math.sin(t * 0.9 + i * 2); dp.array[i * 3 + 2] = IN.z + 0.3 + rand(i + 9) * 2.0; }
@@ -361,7 +368,11 @@ function setTime(t, frame) {
   cam.lk.lerpVectors(f0.l, f1.l, e).add(hh(t + 4, shake * 0.4, a)); camera.lookAt(cam.lk);
   camera.fov = lerp(f0.f, f1.f, e); camera.updateProjectionMatrix();
   lk.toggle('dof', !!dof.on); if (dof.on) lk.focus(lerp(dof.focus[0], dof.focus[1], e), dof.range);
-  lk.toggle('bloom', !!bloom);
+  lk.toggle('bloom', !!bloom && (t < 6 || t >= 54));      // bloom on the lamp (S01) and the rising sun (S08) only
+  const dbg = q.get('dbg') || '';                          // diagnostics only: nokey, noenv, nohemi
+  if (dbg.includes('nokey')) key.intensity = 0;
+  if (dbg.includes('noenv')) scene.environmentIntensity = 0;
+  if (dbg.includes('nohemi')) hemi.intensity = 0;
 }
 
 // ----------------------------------------------------------------- on-screen type: the whistles, translated (<= 6 words each)
