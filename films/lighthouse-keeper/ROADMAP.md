@@ -52,4 +52,6 @@ Frame 1: the lamp is already dying and the hand pulls the switch; a whistle star
 - **Structure:** call, reply, repeat, then the reply is missing and he supplies it.
 - **Look:** Salt Dawn (user) · **Camera:** patient telephoto, one repeated locked frame (S02 and S05) · **Motion:** settle
 - **Tempo:** contemplative · **Transitions:** plain cuts, one match cut S04 to S05 · **Sound:** pressure plus one clear whistle
+- **Motion design:** none beyond the quiet lower-third whistle translations (job: tell what each whistle says); no maps, counters or diagrams, because the story needs none.
+- **Finish (per scene):** S01 lamp room: practical lamp glow, bloom, shallow DOF with a rack to the lips, grain, no fog; S02/S05 wide: aerial perspective and fog for the far rock, no DOF, bloom off except the lamp; S03 gallery: sea spray particles, subtle handheld, bloom on lamp only; S04 interior: warm practical, normal detail on plaster, DOF; S06 handheld, spray; S07 close DOF; S08 rising sun bloom; tone mapping AGX, soft shadows and vignette throughout; no chromatic aberration (type shots), no motion blur or gate weave (off by default).
 - **Light:** soft pre-dawn that warms by the end; the lamp is the only warm point · **Signature:** the whistle phrase, returning changed

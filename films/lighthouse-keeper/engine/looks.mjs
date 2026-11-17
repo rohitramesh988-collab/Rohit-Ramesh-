@@ -29,6 +29,16 @@ import { Sky } from 'three/addons/objects/Sky.js';
 // light.exposure multiplies the scene's light intensities (the scene applies it; see scene.html).
 
 export const LOOKS = {
+  'salt-dawn': {       // The Whistle: overcast pre-dawn, pearl grey and rose, one amber lamp (bg, rock, tower, sea, lamp)
+    palette: ['#C9B8B2', '#4a4a4e', '#d8d2cb', '#8E9AA3', '#E8A33D'],
+    materials: { shading: 'pbr', roughness: 0.75 },
+    light: { exposure: 1.0, azimuthDeg: 100, elevationDeg: 6, intensity: 1.3, ambient: 0.35, fog: 0.012 },
+    post: { tone: 'AGX', saturation: -0.08, contrast: 0.06, brightness: 0, msaa: 0,
+      dof: { focus: 6, range: 3, bokeh: 2 },
+      bloom: { threshold: 0.8, smoothing: 0.3, intensity: 0.55, radius: 0.7 },
+      vignette: { offset: 0.3, darkness: 0.5 }, grain: { intensity: 0.05, size: 1.3 } },
+    render: { fps: 24, hold: 1, aspects: ['16:9'] },
+  },
   'cinematic-realistic': {
     palette: ['#1d2430', '#5b4a3c', '#a88a6a', '#3e5568', '#e0a35a'],
     materials: { shading: 'pbr', roughness: 0.6 },

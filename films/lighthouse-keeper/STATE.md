@@ -6,11 +6,11 @@ Method: this chat coordinates and builds what it holds the context for; a fresh 
 
 ## Resume here
 <!-- Updated at every gate and before every handoff. A new chat starts with "STATE.md'den devam et" / "Continue from STATE.md". -->
-- **Phase:** 1 Interview
-- **Pace:** through (Film mode: asked with the script gate)
+- **Phase:** 4 Style frame (first test stills rendered, look not right yet)
+- **Pace:** through
 - **Approved gates:** roadmap, script
 - **Open notes:** none (notes/round-N.md)
-- **Next action:** <one concrete line, with the files to read>
+- **Next action:** fix the test stills in review/test: the sea is blown out white (lower its brightness or the exposure), the far rock is lost in fog (lower fog or move it closer), and the S01 camera sits inside lamp room geometry (move it, hide the glass). Re-render with: node tools/capture.mjs --url engine/whistle.html --out review/test --frames "72,240,432,624,816,1056,1200,1368" --params "w=640&h=360" --flags "--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist" (about 0.75 fps at 640x360, so a full 60 s draft is about 32 min). Still to do: type pick, audio (whistle and music in code), animatic, draft. engine/vendor is not in git: restore it with npm install three@0.186.1 postprocessing@6.39.5 and copy build and examples/jsm into engine/vendor (the CDNs are blocked here).
 - **Budget so far:** <~estimate> of the <Balanced> ceiling (<n>%)
 
 ## Now

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Whistle</title>
+<style>html,body{margin:0;background:#000}canvas{display:block;max-width:100vw;max-height:100vh;height:auto;margin:0 auto}</style>
+<script type="importmap">{ "imports": {
+  "three": "./vendor/build/three.module.js",
+  "three/addons/": "./vendor/jsm/",
+  "postprocessing": "./vendor/pp-build/index.js" } }</script>
+</head>
+<body>
+<script type="module">
+// The Whistle: 60 s, 24 fps. Frame contract of tools/capture.mjs: window.READY, renderFrame(i), captureFrame(i).
+// URL params: w, h (default 1920x1080), look (default salt-dawn), seed, capture=1, shot=<n> (preview a shot only).
+import * as THREE from 'three';
+import { LOOKS, buildLook, skyLight } from './looks.mjs';
+import { loadType, TYPE_FALLBACK } from './type.mjs';
+
+const q = new URLSearchParams(location.search);
+const W = +q.get('w') || 1920, H = +q.get('h') || 1080, SEED = +q.get('seed') || 7;
+const look = LOOKS[q.get('look') || 'salt-dawn'];
+const FPS = 24, DURATION = 60, FRAMES = FPS * DURATION;
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 2500);
+const [bgHex, , , , lampHex] = look.palette;
+const BG = new THREE.Color(bgHex), LAMP = new THREE.Color(lampHex);
+scene.fog = new THREE.FogExp2(BG.getHex(), 0.0042);
+
+// ----------------------------------------------------------------- helpers: seeded noise, smoothing
+const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const hash3 = (x, y, z) => { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + SEED * 13.37) * 43758.5453; return s - Math.floor(s); };
+const vnoise = (x, y, z) => {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+  const c = (a, b, d) => hash3(xi + a, yi + b, zi + d);
+  return lerp(lerp(lerp(c(0, 0, 0), c(1, 0, 0), u), lerp(c(0, 1, 0), c(1, 1, 0), u), v),
+              lerp(lerp(c(0, 0, 1), c(1, 0, 1), u), lerp(c(0, 1, 1), c(1, 1, 1), u), v), w);
+};
+const fbm = (x, y, z, o = 4) => { let a = 0.5, s = 0, f = 1; for (let i = 0; i < o; i++) { s += a * vnoise(x * f, y * f, z * f); f *= 2.03; a *= 0.5; } return s; };
+const rand = (n) => hash3(n, n * 1.7, 3.1);
+
+// ----------------------------------------------------------------- texture painters (canvas, seeded, deterministic)
+function paint(size, fn) { const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d'); fn(g, size); return c; }
+function noiseTex(size, scale, base, amp, tint) {                                  // grainy plaster / stone
+  const c = paint(size, (g, s) => {
+    const img = g.createImageData(s, s);
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const n = fbm(x / s * scale, y / s * scale, 1.5, 5), m = hash3(x, y, 9) * 0.12;
+      const v = base + (n - 0.5) * amp + m * amp * 0.4, k = (y * s + x) * 4;
+      img.data[k] = Math.max(0, Math.min(255, v * tint[0])); img.data[k + 1] = Math.max(0, Math.min(255, v * tint[1]));
+      img.data[k + 2] = Math.max(0, Math.min(255, v * tint[2])); img.data[k + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  });
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+const bumpOf = (tex) => { const t = new THREE.CanvasTexture(tex.image); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+
+// ----------------------------------------------------------------- sky dome (pearl grey to rose; the sun comes up behind the far rock)
+const SUN_AZ = Math.atan2(-0.48 + 0.0, -0.88) ;                                     // direction of the far rock, bent left below
+const sunDir = new THREE.Vector3();
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { uSun: { value: new THREE.Vector3(0, 0, -1) }, uWarm: { value: 0 }, uTop: { value: new THREE.Color('#9fa6ab') },
+              uMid: { value: new THREE.Color('#C9B8B2') }, uHor: { value: new THREE.Color('#D9A38F') } },
+  vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `varying vec3 vDir; uniform vec3 uSun; uniform float uWarm; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uHor;
+    void main(){ float h = clamp(vDir.y, -0.2, 1.0);
+      vec3 c = mix(uMid, uTop, smoothstep(0.0, 0.7, h));
+      c = mix(c, uHor, (1.0 - smoothstep(0.0, 0.22, h)) * (0.35 + 0.65 * uWarm));
+      float s = max(dot(normalize(vDir), normalize(uSun)), 0.0);
+      c += vec3(1.0, 0.72, 0.45) * (pow(s, 24.0) * 0.55 + pow(s, 600.0) * 3.0) * uWarm;
+      c = mix(c, uMid * 0.82, 1.0 - smoothstep(-0.2, 0.0, vDir.y));
+      gl_FragColor = vec4(c, 1.0); }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat); sky.frustumCulled = false; scene.add(sky);
+const env = skyLight(renderer, scene, { elevationDeg: 8, azimuthDeg: 200, turbidity: 8, rayleigh: 1.2, intensity: 0.35 });
+
+// ----------------------------------------------------------------- lights
+const key = new THREE.DirectionalLight(0xffd9b8, 0.4);
+key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.radius = 5; key.shadow.bias = -0.0004;
+Object.assign(key.shadow.camera, { left: -26, right: 26, top: 32, bottom: -12, near: 1, far: 220 });
+scene.add(key, key.target);
+const hemi = new THREE.HemisphereLight(0xcdbfba, 0x4a4a4e, 0.55); scene.add(hemi);
+const lampLight = new THREE.PointLight(LAMP.getHex(), 0, 0, 2); lampLight.position.set(0, 21.6, 0); scene.add(lampLight);
+
+// ----------------------------------------------------------------- the sea (swell displaced in JS, a pure function of time)
+const SEA = new THREE.PlaneGeometry(1400, 1400, 170, 170); SEA.rotateX(-Math.PI / 2);
+const seaPos = SEA.attributes.position, seaBase = Float32Array.from(seaPos.array);
+const seaMat = new THREE.MeshStandardMaterial({ color: '#7d8d96', roughness: 0.3, metalness: 0.15, envMapIntensity: 1.1 });
+const sea = new THREE.Mesh(SEA, seaMat); sea.receiveShadow = true; scene.add(sea);
+const swell = (x, z, t) => 0.38 * Math.sin(0.05 * x + 0.032 * z + 0.9 * t) + 0.26 * Math.sin(0.092 * z - 0.071 * x + 1.3 * t + 1.7)
+  + 0.1 * Math.sin(0.23 * x + 0.19 * z + 2.1 * t + 0.4);
+function updateSea(t) {
+  for (let i = 0; i < seaPos.count; i++) { const x = seaBase[i * 3], z = seaBase[i * 3 + 2]; seaPos.array[i * 3 + 1] = swell(x, z, t); }
+  seaPos.needsUpdate = true; SEA.computeVertexNormals();
+}
+
+// ----------------------------------------------------------------- rocks (displaced icospheres, wet-dark below, salt-pale above)
+const stoneTex = noiseTex(512, 7, 150, 120, [1, 0.97, 0.93]); stoneTex.repeat.set(4, 4);
+function makeRock(radius, squash, seed, amp) {
+  const g = new THREE.IcosahedronGeometry(radius, 6), p = g.attributes.position, col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), l = Math.hypot(x, y, z);
+    const nx = x / l, ny = y / l, nz = z / l;
+    const d = 1 + amp * (fbm(nx * 2.2 + seed, ny * 2.2, nz * 2.2 + seed, 5) - 0.5) + amp * 0.35 * (fbm(nx * 9, ny * 9 + seed, nz * 9, 3) - 0.5);
+    p.setXYZ(i, x * d, y * d * squash, z * d);
+    const hgt = y * d * squash, wet = 1 - sstep(0.4, 2.8, hgt + 1.5), salt = sstep(2, 6, hgt) * fbm(nx * 5, ny * 5, nz * 5 + seed, 3);
+    const v = 0.42 + 0.3 * fbm(nx * 4 + seed, ny * 4, nz * 4, 4);
+    col[i * 3] = v * (1 - 0.45 * wet) + 0.2 * salt; col[i * 3 + 1] = v * (1 - 0.43 * wet) + 0.19 * salt; col[i * 3 + 2] = v * (1 - 0.38 * wet) + 0.17 * salt;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: stoneTex, bumpMap: bumpOf(stoneTex), bumpScale: 2.2, roughness: 0.92 }));
+  m.castShadow = m.receiveShadow = true; return m;
+}
+const rockA = makeRock(16, 0.46, 1.3, 0.55); rockA.position.set(0, -1.4, 0); scene.add(rockA);
+const rockB = makeRock(9, 0.8, 5.7, 0.6); rockB.position.set(-96, -1, -176); scene.add(rockB);
+const rockC = makeRock(5, 0.7, 9.1, 0.5); rockC.position.set(26, -0.8, 12); scene.add(rockC);       // a skerry near the keeper's rock
+const foam = new THREE.Mesh(new THREE.RingGeometry(14.5, 21, 64, 1), new THREE.MeshBasicMaterial({
+  map: new THREE.CanvasTexture(paint(256, (g, s) => { for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(255,255,255,${0.1 + rand(i) * 0.35})`;
+    g.fillRect(rand(i + 3) * s, rand(i + 7) * s, 1 + rand(i + 11) * 6, 1 + rand(i + 17) * 3); } })),
+  transparent: true, opacity: 0.55, depthWrite: false, fog: true }));
+foam.rotation.x = -Math.PI / 2; foam.position.y = 0.25; scene.add(foam);
+
+// ----------------------------------------------------------------- the tower (lathe, plaster, gallery, lamp room, roof)
+const plaster = noiseTex(512, 6, 210, 70, [1, 0.97, 0.92]); plaster.repeat.set(3, 2);
+const towerMat = new THREE.MeshStandardMaterial({ map: plaster, bumpMap: bumpOf(plaster), bumpScale: 1.2, roughness: 0.85 });
+const dark = new THREE.MeshStandardMaterial({ color: '#2c2d31', roughness: 0.6, metalness: 0.4 });
+const brass = new THREE.MeshStandardMaterial({ color: '#a8854a', roughness: 0.35, metalness: 0.9 });
+const tower = new THREE.Mesh(new THREE.LatheGeometry([[2.35, 0], [2.28, 3], [1.95, 8], [1.65, 12], [1.5, 14]].map(([r, y]) => new THREE.Vector2(r, y)), 48), towerMat);
+tower.position.set(0, 6, 0); tower.castShadow = tower.receiveShadow = true; scene.add(tower);
+const plinth = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 4.2, 4, 40), towerMat); plinth.position.y = 4.1; plinth.castShadow = plinth.receiveShadow = true; scene.add(plinth);
+const band = (y, r) => { const b = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.03, r + 0.03, 0.55, 48), new THREE.MeshStandardMaterial({ color: '#6c6a68', roughness: 0.9 })); b.position.y = y; scene.add(b); };
+band(10.5, 2.04); band(15.2, 1.78);
+for (let k = 0; k < 7; k++) {                                                         // small stair windows, spiral up the shaft
+  const a = k * 2.1, y = 8.4 + k * 1.55, r = 2.3 - (k * 1.55) / 14 * 0.8;
+  const w = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.7, 0.2), dark); w.position.set(Math.cos(a) * r, y, Math.sin(a) * r); w.rotation.y = -a + Math.PI / 2; scene.add(w);
+}
+const gallery = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 2.2, 0.38, 48), new THREE.MeshStandardMaterial({ color: '#4a4a4e', roughness: 0.7, metalness: 0.2 }));
+gallery.position.y = 19.85; gallery.castShadow = gallery.receiveShadow = true; scene.add(gallery);
+const floor = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.0, 0.1, 48), new THREE.MeshStandardMaterial({ color: '#55565a', roughness: 0.8, metalness: 0.2 })); floor.position.y = 20.08; floor.receiveShadow = true; scene.add(floor);
+const railMat = new THREE.MeshStandardMaterial({ color: '#1f2023', roughness: 0.5, metalness: 0.7 });
+const rail = new THREE.Mesh(new THREE.TorusGeometry(2.95, 0.035, 8, 64), railMat); rail.rotation.x = Math.PI / 2; rail.position.y = 21.2; scene.add(rail);
+const rail2 = new THREE.Mesh(new THREE.TorusGeometry(2.95, 0.02, 8, 64), railMat); rail2.rotation.x = Math.PI / 2; rail2.position.y = 20.65; scene.add(rail2);
+for (let k = 0; k < 36; k++) { const a = k / 36 * Math.PI * 2; const p = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.15, 6), railMat);
+  p.position.set(Math.cos(a) * 2.95, 20.7, Math.sin(a) * 2.95); p.castShadow = true; scene.add(p); }
+const roomWall = new THREE.Mesh(new THREE.CylinderGeometry(1.34, 1.38, 0.9, 32), towerMat); roomWall.position.y = 20.58; roomWall.castShadow = true; scene.add(roomWall);   // low parapet
+const glass = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 2.3, 32, 1, true), new THREE.MeshStandardMaterial({ color: '#cfd8dc', transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+glass.position.y = 22.0; scene.add(glass);
+for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; const m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.3, 0.06), dark);
+  m.position.set(Math.cos(a) * 1.3, 22.0, Math.sin(a) * 1.3); m.castShadow = true; scene.add(m); }
+const roofRing = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.45, 0.25, 32), dark); roofRing.position.y = 23.25; roofRing.castShadow = true; scene.add(roofRing);
+const roof = new THREE.Mesh(new THREE.ConeGeometry(1.55, 1.5, 32), dark); roof.position.y = 24.15; roof.castShadow = true; scene.add(roof);
+const vane = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 6), dark); vane.position.y = 25.25; scene.add(vane);
+// the lamp: a stack of lens rings around an amber core; its glow follows lampLevel(t)
+const lensMat = new THREE.MeshStandardMaterial({ color: '#f5e2b8', emissive: LAMP, emissiveIntensity: 0, roughness: 0.2, transparent: true, opacity: 0.92 });
+const lens = new THREE.Mesh(new THREE.LatheGeometry([[0.12, -0.7], [0.36, -0.5], [0.4, -0.3], [0.33, -0.1], [0.4, 0.1], [0.33, 0.3], [0.4, 0.5], [0.36, 0.7], [0.12, 0.8]].map(([r, y]) => new THREE.Vector2(r, y)), 32), lensMat);
+lens.position.y = 21.55; scene.add(lens);
+const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.4, 0.6, 24), brass); lampBase.position.y = 20.5; scene.add(lampBase);
+const beamGroup = new THREE.Group(); beamGroup.position.y = 21.55; scene.add(beamGroup);
+const beamGeo = new THREE.ConeGeometry(7, 220, 24, 1, true); beamGeo.translate(0, -110, 0);
+const beamMat = new THREE.MeshBasicMaterial({ color: LAMP, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+const beam = new THREE.Mesh(beamGeo, beamMat); beam.rotation.z = Math.PI / 2; beamGroup.add(beam);
+const beam2 = beam.clone(); beam2.rotation.z = -Math.PI / 2; beamGroup.add(beam2);
+// the switch panel inside the lamp room (S01)
+const panel = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.22), dark); panel.position.set(-1.2, 21.0, 0); scene.add(panel);
+const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.16, 8), brass); lever.geometry.translate(0, -0.08, 0);
+lever.position.set(-1.14, 21.08, 0); lever.rotation.x = 0; scene.add(lever);
+const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), brass); knob.position.y = -0.17; lever.add(knob);
+const lampLamp = new THREE.PointLight(0xffe0b0, 0, 0, 2); lampLamp.position.set(0, 21.5, 0); scene.add(lampLamp);
+
+// ----------------------------------------------------------------- the far tower on the other rock: dark, unlit
+const farTower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.2, 14, 24), new THREE.MeshStandardMaterial({ color: '#35373b', roughness: 0.9 }));
+farTower.position.set(-96, 6.5, -176); farTower.castShadow = true; scene.add(farTower);
+const farTop = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 1.7, 0.4, 24), dark); farTop.position.set(-96, 13.8, -176); scene.add(farTop);
+const farRoom = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 16), new THREE.MeshStandardMaterial({ color: '#202225', roughness: 0.4 })); farRoom.position.set(-96, 15, -176); scene.add(farRoom);
+const farRoof = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.2, 16), dark); farRoof.position.set(-96, 16.5, -176); scene.add(farRoof);
+
+// ----------------------------------------------------------------- the keeper (a figure built from named parts: boots, coat, scarf, cap, hands, lips)
+const KEEP_AT = new THREE.Vector3(-1.2, 20.13, -2.2);                                 // on the gallery, facing out toward the far rock
+function makeKeeper() {
+  const grp = new THREE.Group();
+  const coat = new THREE.MeshStandardMaterial({ color: '#2b3038', roughness: 0.9 }), skin = new THREE.MeshStandardMaterial({ color: '#b48f7a', roughness: 0.6 });
+  const wool = new THREE.MeshStandardMaterial({ color: '#7a3b32', roughness: 0.95 }), capMat = new THREE.MeshStandardMaterial({ color: '#1d2126', roughness: 0.9 });
+  for (const s of [-1, 1]) { const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.62, 4, 10), coat); leg.position.set(s * 0.11, 0.5, 0); leg.castShadow = true; grp.add(leg);
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.3), capMat); boot.position.set(s * 0.11, 0.08, 0.05); grp.add(boot); }
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.5, 6, 14), coat); torso.position.y = 1.2; torso.scale.set(1.15, 1, 0.8); torso.castShadow = true; grp.add(torso);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.07, 10, 20), wool); collar.rotation.x = Math.PI / 2; collar.position.y = 1.56; grp.add(collar);
+  const headG = new THREE.Group(); headG.position.set(0, 1.74, 0); grp.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.115, 24, 18), skin); head.scale.set(0.95, 1.12, 1); head.castShadow = true; headG.add(head);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), skin); nose.position.set(0, -0.005, 0.115); nose.scale.set(1, 1.3, 1.4); headG.add(nose);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.125, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), capMat); cap.position.y = 0.03; cap.scale.set(1.0, 0.9, 1.05); headG.add(cap);
+  const peak = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.015, 0.09), capMat); peak.position.set(0, 0.05, 0.13); headG.add(peak);
+  const lips = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.0085, 8, 14), new THREE.MeshStandardMaterial({ color: '#8c4b46', roughness: 0.5 })); lips.position.set(0, -0.062, 0.112); headG.add(lips);
+  const scarf = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.55, 1, 10), new THREE.MeshStandardMaterial({ color: '#7a3b32', roughness: 0.95, side: THREE.DoubleSide }));
+  scarf.position.set(0.14, 1.5, -0.1); grp.add(scarf);
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(s * 0.26, 1.42, 0); grp.add(sh);
+    const up = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.26, 4, 8), coat); up.position.y = -0.17; up.castShadow = true; sh.add(up);
+    const el = new THREE.Group(); el.position.y = -0.34; sh.add(el);
+    const lo = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.24, 4, 8), coat); lo.position.y = -0.16; lo.castShadow = true; el.add(lo);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 8), skin); hand.position.y = -0.33; hand.scale.set(0.85, 1.15, 0.7); el.add(hand);
+    arms.push({ sh, el, hand, s });
+  }
+  grp.userData = { headG, lips, arms, scarf, torso };
+  return grp;
+}
+const keeper = makeKeeper(); scene.add(keeper);
+const scarfGeo = keeper.userData.scarf.geometry, scarfBase = Float32Array.from(scarfGeo.attributes.position.array);
+
+// ----------------------------------------------------------------- the interior (S04): a plaster wall with a tally scratched in it, set far from the tower
+const IN = new THREE.Vector3(400, 0, 0);
+const tallyCanvas = paint(1024, (g, s) => {
+  const img = g.createImageData(s, s);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) { const n = fbm(x / s * 6, y / s * 6, 3.3, 5), k = (y * s + x) * 4, v = 196 + (n - 0.5) * 70 + hash3(x, y, 2) * 10;
+    img.data[k] = v; img.data[k + 1] = v * 0.97; img.data[k + 2] = v * 0.9; img.data[k + 3] = 255; }
+  g.putImageData(img, 0, 0);
+  g.lineCap = 'round'; g.strokeStyle = 'rgba(70,58,50,0.85)'; g.lineWidth = 3;
+  for (let col = 0; col < 2; col++) for (let n = 0; n < 24; n++) {                                // two columns of five-bar gates, one column per keeper
+    const gate = Math.floor(n / 5), within = n % 5, x0 = 150 + col * 460 + within % 5 * 34, y0 = 100 + gate * 160 + hash3(gate, col, n) * 6;
+    g.beginPath();
+    if (within < 4) { g.moveTo(x0, y0); g.lineTo(x0 + (rand(n + col * 40) - 0.5) * 4, y0 + 110 + rand(n) * 8); }
+    else { g.moveTo(x0 - 140, y0 + 100); g.lineTo(x0 + 10, y0 + 14 + rand(col + gate) * 6); }
+    g.stroke();
+  }
+});
+const tallyTex = new THREE.CanvasTexture(tallyCanvas); tallyTex.colorSpace = THREE.SRGBColorSpace; tallyTex.anisotropy = 8;
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 5.6), new THREE.MeshStandardMaterial({ map: tallyTex, bumpMap: tallyTex, bumpScale: 1.3, roughness: 0.92 }));
+wall.position.copy(IN).add(new THREE.Vector3(0, 1.6, 0)); wall.receiveShadow = true; scene.add(wall);
+const innerFloor = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), new THREE.MeshStandardMaterial({ color: '#3a342f', roughness: 0.9 })); innerFloor.rotation.x = -Math.PI / 2; innerFloor.position.copy(IN).add(new THREE.Vector3(0, -1.2, 3)); innerFloor.receiveShadow = true; scene.add(innerFloor);
+const winLight = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.5), new THREE.MeshBasicMaterial({ color: '#dfe6ea', fog: false })); winLight.position.copy(IN).add(new THREE.Vector3(-2.15, 2.1, 0.02)); scene.add(winLight);
+const winGlow = new THREE.SpotLight(0xdfe6ea, 0, 0, 0.9, 0.8, 2); winGlow.position.copy(IN).add(new THREE.Vector3(-2.15, 2.1, 1.0)); winGlow.target.position.copy(IN).add(new THREE.Vector3(0.5, 1.6, 0)); scene.add(winGlow, winGlow.target);
+const oil = new THREE.PointLight(0xffb870, 0, 0, 2); oil.position.copy(IN).add(new THREE.Vector3(1.4, 1.9, 1.1)); scene.add(oil);
+const oilBody = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.14, 12), brass); oilBody.position.copy(oil.position).add(new THREE.Vector3(0, -0.07, 0)); scene.add(oilBody);
+const oilFlame = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffd9a0', fog: false })); oilFlame.scale.set(1, 1.7, 1); oilFlame.position.copy(oil.position); scene.add(oilFlame);
+const fingerG = new THREE.Group(); scene.add(fingerG);
+const fingerMat = new THREE.MeshStandardMaterial({ color: '#b48f7a', roughness: 0.6 });
+const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.1, 4, 8), fingerMat); finger.rotation.x = Math.PI / 2 - 0.5; finger.position.set(0, 0, 0.1); fingerG.add(finger);
+const palm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.13), fingerMat); palm.position.set(0, 0.05, 0.22); palm.rotation.x = 0.2; fingerG.add(palm);
+const wrist = new THREE.Mesh(new THREE.CapsuleGeometry(0.036, 0.3, 4, 8), new THREE.MeshStandardMaterial({ color: '#2b3038', roughness: 0.9 })); wrist.position.set(0, 0.12, 0.45); wrist.rotation.x = 1.0; fingerG.add(wrist);
+// dust in the shaft of window light
+const DUST = 220, dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST * 3), 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: '#fff3dd', size: 0.012, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })); dust.frustumCulled = false; scene.add(dust);
+
+// ----------------------------------------------------------------- gulls (secondary motion: flapping, circling, never in step)
+const gulls = [];
+for (let k = 0; k < 5; k++) {
+  const g = new THREE.Group(), body = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.25, 3, 8), new THREE.MeshStandardMaterial({ color: '#e8e6e1', roughness: 0.8 }));
+  body.rotation.x = Math.PI / 2; g.add(body);
+  const wings = [];
+  for (const s of [-1, 1]) { const w = new THREE.Group(); const m = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.012, 0.16), new THREE.MeshStandardMaterial({ color: '#d9d7d2', roughness: 0.9 }));
+    m.position.x = s * 0.31; w.add(m); g.add(w); wings.push({ w, s }); }
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.16), capMatTip()); tip.position.x = 0; g.userData = { wings }; scene.add(g); gulls.push(g);
+}
+function capMatTip() { return new THREE.MeshStandardMaterial({ color: '#222', roughness: 1 }); }
+
+// ----------------------------------------------------------------- spray (particles blown across the gallery, S03 and S06)
+const SPR = 260, sprGeo = new THREE.BufferGeometry(); sprGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPR * 3), 3));
+const spray = new THREE.Points(sprGeo, new THREE.PointsMaterial({ color: '#f3f1ee', size: 0.045, transparent: true, opacity: 0.55, depthWrite: false })); spray.frustumCulled = false; scene.add(spray);
+
+// ----------------------------------------------------------------- timeline: lamp, sun, shots
+const lampLevel = (t) => {
+  if (t < 30) return 1 - 0.95 * sstep(1.2, 2.4, t) + 0.0;
+  if (t < 56.2) return 1;
+  return 1 - 0.95 * sstep(56.2, 57.6, t);
+};
+const warmth = (t) => sstep(40, 60, t);                                               // the day arrives
+const WHISTLES = [[0.3, 1.2], [3.2, 4.6], [6.3, 7.2], [11.0, 12.0], [15.0, 16.0], [18.0, 19.0], [31.0, 32.3], [40.2, 41.6], [47.0, 49.5], [55.6, 56.4]];   // keeper lips move
+const speaking = (t) => { for (const [a, b] of WHISTLES) if (t >= a && t <= b) return Math.sin((t - a) / (b - a) * Math.PI); return 0; };
+
+const P = (x, y, z) => new THREE.Vector3(x, y, z);
+const F = new THREE.Vector3(-0.48, 0, -0.88).normalize();                              // facing out toward the far rock
+const HEAD = KEEP_AT.clone().add(P(0, 1.74, 0));
+const hh = (t, a, s = 0) => P(Math.sin(t * 1.7 + s) + 0.5 * Math.sin(t * 3.1 + s * 2), Math.sin(t * 1.3 + s * 3) + 0.4 * Math.sin(t * 2.6 + s), 0.5 * Math.sin(t * 2.2 + s * 4)).multiplyScalar(a);
+// each shot: [start, end, from{pos,look,fov}, to{pos,look,fov}, handheld amount, dof{on,focus,range}, bloom]
+const SHOTS = [
+  [0, 6, { p: P(-0.35, 21.18, 0.68), l: P(-1.12, 21.06, 0), f: 34 }, { p: P(-0.92, 21.82, 0.62), l: P(-0.92, 21.8, 0.0), f: 26 }, 0.012, { on: 1, focus: [0.8, 0.62], range: 0.35 }, 1],
+  [6, 14, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, { p: P(53, 5, 99), l: P(-8, 12.6, -62), f: 15.5 }, 0.0, { on: 0 }, 1],
+  [14, 22, { p: P(1.6, 20.95, -3.7).add(F.clone().multiplyScalar(-0.9)), l: KEEP_AT.clone().add(P(0, 1.52, 0)), f: 32 }, { p: P(1.6, 20.95, -3.7).add(F.clone().multiplyScalar(0.7)), l: KEEP_AT.clone().add(P(0, 1.5, 0)), f: 32 }, 0.018, { on: 1, focus: [3.7, 3.7], range: 5 }, 1],
+  [22, 30, { p: IN.clone().add(P(-1.6, 1.7, 2.6)), l: IN.clone().add(P(-0.6, 1.7, 0)), f: 30 }, { p: IN.clone().add(P(0.6, 1.62, 2.4)), l: IN.clone().add(P(0.9, 1.65, 0)), f: 30 }, 0.008, { on: 1, focus: [2.7, 2.5], range: 1.8 }, 0],
+  [30, 38, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, { p: P(60, 5, 110), l: P(-6, 12, -56), f: 17 }, 0.0, { on: 0 }, 1],
+  [38, 46, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(3.6)).add(P(0, 0.35, 0)), l: KEEP_AT.clone().add(P(0, 1.5, 0)), f: 36 }, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(3.0)).add(P(0.2, 0.3, 0)), l: KEEP_AT.clone().add(P(0, 1.55, 0)), f: 34 }, 0.06, { on: 1, focus: [3.6, 3.0], range: 4 }, 1],
+  [46, 54, { p: HEAD.clone().add(F.clone().multiplyScalar(0.85)).add(P(0.04, -0.03, 0)), l: HEAD.clone().add(P(0, -0.06, 0)), f: 24 }, { p: HEAD.clone().add(F.clone().multiplyScalar(0.72)).add(P(0.02, -0.02, 0)), l: HEAD.clone().add(P(0, -0.062, 0)), f: 22 }, 0.01, { on: 1, focus: [0.86, 0.73], range: 0.28 }, 1],
+  [54, 60, { p: KEEP_AT.clone().add(F.clone().multiplyScalar(-1.5)).add(P(0.35, 0.95, 0)), l: KEEP_AT.clone().add(F.clone().multiplyScalar(40)).add(P(0, 3.5, 0)), f: 36 }, { p: P(1.9, 22.3, 2.6), l: KEEP_AT.clone().add(F.clone().multiplyScalar(40)).add(P(0, 4.5, 0)), f: 40 }, 0.01, { on: 0 }, 1],
+];
+const shotAt = (t) => SHOTS.find((s) => t < s[1]) || SHOTS[SHOTS.length - 1];
+const only = q.get('shot') != null ? +q.get('shot') : null;
+
+const cam = { lk: new THREE.Vector3() };
+const lk = buildLook({ renderer, scene, camera, look, fps: FPS, seed: SEED, setTime });
+
+function setTime(t, frame) {
+  // --- sun and sky
+  const w = warmth(t), el = lerp(-0.045, 0.045, sstep(44, 60, t));
+  sunDir.set(-0.48 + 0.22, el, -0.88).normalize();
+  skyMat.uniforms.uSun.value.copy(sunDir); skyMat.uniforms.uWarm.value = 0.1 + 0.9 * w;
+  key.position.copy(sunDir).multiplyScalar(110).add(P(0, 10, 0)); key.target.position.set(0, 14, 0);
+  key.intensity = 0.35 + 2.4 * w; key.color.setRGB(1, 0.86 - 0.12 * w, 0.72 - 0.2 * w);
+  hemi.intensity = 0.55 + 0.15 * w;
+  // --- lamp
+  const L = lampLevel(t), flick = 1 + 0.03 * Math.sin(t * 31.0) * L;
+  lensMat.emissiveIntensity = 3.2 * L * flick; lampLight.intensity = 1700 * L; lampLamp.intensity = 90 * L;
+  beamGroup.rotation.y = t * (Math.PI * 2 / 7); beamMat.opacity = 0.075 * L;
+  // --- sea and rocks
+  updateSea(t);
+  foam.scale.setScalar(1 + 0.05 * Math.sin(t * 0.9)); foam.material.opacity = 0.45 + 0.15 * Math.sin(t * 0.9 + 1);
+  // --- keeper: placement and pose per shot
+  const sh = shotAt(t);
+  const inLamp = t < 6;
+  const kPos = inLamp ? P(-0.74, 20.14, 0) : KEEP_AT, yaw = inLamp ? -Math.PI / 2 : Math.atan2(F.x, F.z);
+  keeper.position.copy(kPos); keeper.rotation.y = yaw;
+  const ud = keeper.userData, sp = speaking(t), breath = Math.sin(t * 1.6) * 0.004;
+  ud.torso.scale.set(1.15 + breath * 3, 1 + breath * 2, 0.8); ud.headG.rotation.x = -0.05 * sp + 0.02 * Math.sin(t * 0.8); ud.headG.rotation.y = 0.04 * Math.sin(t * 0.5);
+  ud.lips.scale.set(1 - 0.35 * sp, 1 - 0.35 * sp, 1); ud.lips.position.z = 0.112 + 0.006 * sp;
+  // arms: S01 reaches the lever; S06-S07 hands cupped at the mouth; otherwise resting on the rail
+  let raise = 0, lev = 0;
+  if (inLamp) { raise = 0.55 * sstep(0.2, 1.1, t) * (1 - sstep(2.4, 3.2, t)); lev = sstep(1.2, 2.3, t); }
+  else if (t >= 38 && t < 46) raise = sstep(38.6, 39.6, t) * (1 - sstep(44.6, 45.8, t)) * (0.9 + 0.1 * Math.sin(t * 6));
+  else if (t >= 46 && t < 54) raise = 0.0 + 0.55 * sstep(46.4, 47.1, t) * (1 - sstep(49.8, 50.6, t));
+  else if (t >= 54) raise = 0.2;
+  for (const a of ud.arms) {
+    const r = inLamp ? (a.s === 1 ? raise : 0.05) : raise;
+    a.sh.rotation.set(-lerp(0.12, inLamp ? 1.2 : 1.3, r), 0, a.s * lerp(0.06, inLamp ? 0.04 : -0.3, r));
+    a.el.rotation.set(-lerp(0.2, inLamp ? 0.4 : 2.0, r), 0, a.s * (inLamp ? 0 : -0.25 * r));
+  }
+  lever.rotation.x = -lev * 0.95;
+  // scarf streams in the wind
+  const sp2 = scarfGeo.attributes.position;
+  for (let i = 0; i < sp2.count; i++) { const y = scarfBase[i * 3 + 1], k = (0.28 - y) / 0.55;
+    sp2.array[i * 3 + 2] = scarfBase[i * 3 + 2] - 0.2 * k * (1 + 0.5 * Math.sin(t * 5 + y * 9 + k * 4)); sp2.array[i * 3] = scarfBase[i * 3] + 0.07 * k * Math.sin(t * 3 + y * 6); }
+  sp2.needsUpdate = true;
+  // --- interior props
+  const fy = 1.66 + 0.0, fx = lerp(IN.x - 1.0, IN.x + 1.15, sstep(23.4, 29, t));
+  fingerG.position.set(fx, fy + 0.02 * Math.sin(t * 2.3), IN.z + 0.05); fingerG.rotation.set(0, 0, 0);
+  oil.intensity = (t >= 22 && t < 30 ? 7 : 0) * (1 + 0.06 * Math.sin(t * 17) + 0.04 * Math.sin(t * 29.3));
+  winGlow.intensity = t >= 22 && t < 30 ? 55 : 0; oilFlame.scale.set(1, 1.7 + 0.2 * Math.sin(t * 19), 1);
+  const dp = dustGeo.attributes.position;
+  for (let i = 0; i < DUST; i++) { const s = rand(i * 3.7), a = (t * (0.02 + 0.03 * rand(i + 2)) + s * 9) % 1;
+    dp.array[i * 3] = IN.x - 2.0 + a * 3.8 + 0.1 * Math.sin(t * 0.6 + i); dp.array[i * 3 + 1] = 0.7 + rand(i + 5) * 2.8 + 0.08 * Math.sin(t * 0.9 + i * 2); dp.array[i * 3 + 2] = IN.z + 0.3 + rand(i + 9) * 2.0; }
+  dp.needsUpdate = true;
+  // --- gulls
+  gulls.forEach((g, k) => { const R = 14 + k * 5.5, a = t * (0.16 + 0.025 * k) * (k % 2 ? -1 : 1) + k * 1.9, flap = Math.sin(t * (6.5 + k) + k * 2) * 0.6;
+    g.position.set(Math.cos(a) * R, 15 + (k % 3) * 3.5 + 1.2 * Math.sin(t * 0.7 + k), Math.sin(a) * R);
+    g.rotation.y = -a + (k % 2 ? -Math.PI / 2 : Math.PI / 2) ; g.rotation.z = 0.12 * Math.cos(a * 3 + k);
+    g.userData.wings.forEach(({ w, s }) => { w.rotation.z = s * flap; }); });
+  // --- spray across the gallery
+  const spp = sprGeo.attributes.position, wind = P(-0.88, 0.1, 0.48);
+  for (let i = 0; i < SPR; i++) { const s = rand(i * 1.3), a = (t * (0.5 + 0.7 * rand(i + 4)) * 0.3 + s) % 1;
+    spp.array[i * 3] = KEEP_AT.x + 2.8 * wind.x * (a - 0.2) * 3 + (rand(i + 1) - 0.5) * 6; spp.array[i * 3 + 1] = 19.4 + rand(i + 2) * 4.2 - a * 0.8; spp.array[i * 3 + 2] = KEEP_AT.z + 2.8 * wind.z * (a - 0.2) * 3 + (rand(i + 3) - 0.5) * 6; }
+  spp.needsUpdate = true;
+  // --- camera (shot, ease, handheld) and the per-shot finish
+  const [a, b, f0, f1, shake, dof, bloom] = sh, u = (t - a) / (b - a), e = u * u * u * (u * (u * 6 - 15) + 10);
+  camera.position.lerpVectors(f0.p, f1.p, e).add(hh(t, shake, a));
+  cam.lk.lerpVectors(f0.l, f1.l, e).add(hh(t + 4, shake * 0.4, a)); camera.lookAt(cam.lk);
+  camera.fov = lerp(f0.f, f1.f, e); camera.updateProjectionMatrix();
+  lk.toggle('dof', !!dof.on); if (dof.on) lk.focus(lerp(dof.focus[0], dof.focus[1], e), dof.range);
+  lk.toggle('bloom', !!bloom);
+}
+
+// ----------------------------------------------------------------- on-screen type: the whistles, translated (<= 6 words each)
+const TYPE = { lang: 'en', roles: { display: null, text: null, mono: null }, check: { strings: {}, sizes: { text: 0.042 } } };
+const typeStack = (role) => (TYPE.roles[role] ? `"${TYPE.roles[role].family}", ${TYPE_FALLBACK[role]}` : TYPE_FALLBACK[role]);
+const LINES = [
+  { t: [8.0, 10.2], text: "Light's out. Morning.", side: 'L' }, { t: [11.0, 12.8], text: "Morning. Tea's on.", side: 'R' },
+  { t: [16.0, 18.0], text: "Wind's turning east.", side: 'L' }, { t: [19.0, 21.0], text: 'Bring the washing in.', side: 'R' },
+  { t: [32.0, 34.0], text: "Light's out. Morning.", side: 'L' },
+  { t: [41.0, 42.5], text: 'Are you there?', side: 'L' },
+  { t: [49.0, 50.8], text: "Morning. Tea's on.", side: 'R' },
+  { t: [56.0, 57.5], text: 'Morning.', side: 'R', fade: true },
+];
+function drawLines(g, t) {
+  g.save(); g.textBaseline = 'alphabetic';
+  for (const it of LINES) {
+    const [a, b] = it.t; if (t < a || t > b) continue;
+    const fadeIn = Math.min(1, (t - a) / 0.35), fadeOut = Math.min(1, (b - t) / 0.35);
+    g.globalAlpha = Math.min(fadeIn, fadeOut) * (it.fade ? 0.55 - 0.3 * sstep(a, b, t) : 1);
+    const S = H, size = S * 0.05;
+    g.font = `${it.side === 'R' ? 'italic ' : ''}400 ${size}px ${typeStack('text')}`; g.textAlign = it.side === 'L' ? 'left' : 'right';
+    g.shadowColor = 'rgba(20,18,18,0.55)'; g.shadowBlur = S * 0.012; g.fillStyle = '#f4efe9';
+    g.fillText(it.text, it.side === 'L' ? W * 0.07 : W * 0.93, H * 0.885);
+  }
+  g.restore();
+}
+
+// ----------------------------------------------------------------- frame contract
+const out = document.createElement('canvas'); out.width = W; out.height = H; document.body.appendChild(out);
+const g2 = out.getContext('2d');
+window.renderFrame = (i) => {
+  const f = only != null ? SHOTS[only][0] * FPS + i : i, t = f / FPS;
+  lk.render(f, t); g2.drawImage(renderer.domElement, 0, 0); drawLines(g2, t);
+};
+window.captureFrame = (i, type = 'image/png', quality = 0.95) => { window.renderFrame(i); return out.toDataURL(type, quality); };
+window.READY = loadType(TYPE).then(() => document.fonts.ready).then(() => {
+  const n = only != null ? Math.round((SHOTS[only][1] - SHOTS[only][0]) * FPS) : FRAMES;
+  return { frames: n, fps: FPS, width: W, height: H, renderer: 'three.js r' + THREE.REVISION };
+});
+if (!q.get('capture')) { let frame = 0, last = performance.now(), acc = 0;
+  const loop = (now) => { acc += now - last; last = now; while (acc >= 1000 / FPS) { frame = (frame + 1) % FRAMES; acc -= 1000 / FPS; } window.renderFrame(frame); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop); }
+</script>
+</body>
+</html>
