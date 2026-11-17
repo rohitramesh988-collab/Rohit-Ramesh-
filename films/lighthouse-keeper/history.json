@@ -1,0 +1,92 @@
+{
+ "deals": [
+  {
+   "category": "spark",
+   "seed": "2026-11-17:lighthouse-keeper#1",
+   "dealt": [
+    "s1",
+    "s2",
+    "s3"
+   ],
+   "redeal_reason": null,
+   "pick": "s2",
+   "reason": "Whistled bird language gives the keeper a human voice across water, not the lamp-and-storm picture anyone predicts",
+   "at": "2026-11-17T16:24",
+   "texts": {
+    "s1": "seed: Roman Monuments, Cathedral of St. Peter and Church of Our Lady in Trier UNESCO World Heritage Site · place: a snow globe · form: a camera that never stops moving · medium: underwater photography · colour: sunset gradient · era: a solstice",
+    "s2": "seed: Turkish bird language · place: a laundromat in space · form: one sound, many pictures · medium: wooden toys · era: the 1970s · tone: slapstick",
+    "s3": "seed: jamdani · place: a watchmaker's bench · form: an ant's eye view only · medium: daguerreotype · colour: spring greens · tone: playful"
+   },
+   "seeds": {
+    "s1": {
+     "name": "Roman Monuments, Cathedral of St. Peter and Church of Our Lady in Trier UNESCO World Heritage Site",
+     "fact": "example of a large Roman capital after the division of the empire, Germany",
+     "link": "https://en.wikipedia.org/wiki/Roman_Monuments%2C_Cathedral_of_St_Peter_and_Church_of_Our_Lady_in_Trier",
+     "pool": "place"
+    },
+    "s2": {
+     "name": "Turkish bird language",
+     "fact": "whistled language in Turkey’s Eastern Black Sea Region – inscribed in the List of Intangible Heritage in Need of Urgent Safeguarding in 2017",
+     "link": "https://en.wikipedia.org/wiki/Turkish_bird_language",
+     "pool": "custom"
+    },
+    "s3": {
+     "name": "jamdani",
+     "fact": "traditional weaving art of Bengal, Bangladesh",
+     "link": "https://en.wikipedia.org/wiki/Jamdani",
+     "pool": "custom"
+    }
+   }
+  },
+  {
+   "category": "angle",
+   "seed": "2026-11-17:lighthouse-keeper#1",
+   "dealt": [
+    "one-moment-stretched",
+    "lifetime-compressed",
+    "place-remembers"
+   ],
+   "redeal_reason": null,
+   "pick": "place-remembers",
+   "reason": "The rock holds the conversations; avoids lifetime montage (prediction 2)",
+   "at": "2026-11-17T16:24"
+  },
+  {
+   "category": "sound",
+   "seed": "2026-11-17:lighthouse-keeper#1",
+   "dealt": [
+    "on-the-grid",
+    "toy-orchestra",
+    "under-pressure"
+   ],
+   "redeal_reason": null,
+   "pick": "under-pressure",
+   "reason": "Muffled close sound with one clear whistle breaking through",
+   "at": "2026-11-17T16:24"
+  },
+  {
+   "category": "look",
+   "seed": "2026-11-17:lighthouse-keeper#1",
+   "dealt": [
+    "l1",
+    "l2",
+    "l3",
+    "l4",
+    "l5",
+    "l6"
+   ],
+   "redeal_reason": null,
+   "pick": "l6",
+   "reason": "Telephoto long-lens distance from wildlife documentary suits two keepers across water",
+   "at": "2026-11-17T16:27",
+   "texts": {
+    "l1": "ASCII and terminal: monospace worlds",
+    "l2": "Andreas Gursky: vast patterned panoramas",
+    "l3": "Godard: primary colour, jump cuts, text on screen",
+    "l4": "Sports broadcast graphics: live data overlays",
+    "l5": "Sofia Coppola: pastel melancholy, natural light, stillness",
+    "l6": "Wildlife documentary: telephoto, golden backlight"
+   }
+  }
+ ]
+}
