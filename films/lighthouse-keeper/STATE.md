@@ -6,6 +6,7 @@ Method: this chat coordinates and builds what it holds the context for; a fresh 
 
 ## Resume here
 <!-- Updated at every gate and before every handoff. A new chat starts with "STATE.md'den devam et" / "Continue from STATE.md". -->
+- **Audio done (v1):** audio/build.py writes stems, tools/mix.py + master_audio.py give audio/master-v1.wav at -14 LUFS, TP -1.0 (loudnorm ran in dynamic mode: a light compression, because the whistle peaks are high). Not yet heard by the user: needs a listen at 7.2 s, 10.2 s, 33 to 38 s (silence), 47 s and 55.4 s. Type: Newsreader (user's pick under Pace through: ★), local files in fonts/newsreader, rows in LICENSES.csv.
 - **Phase:** 4 Style frame done as progress stills (review/sheet4.png: eight shots, one frame each). Sea haze, far tower and lips now read; hand in S04 and the keeper's face are still crude. Next: type, audio, animatic, draft.
 - **Pace:** through
 - **Approved gates:** roadmap, script

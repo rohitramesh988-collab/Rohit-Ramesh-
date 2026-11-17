@@ -278,7 +278,7 @@ const lampLevel = (t) => {
   return 1 - 0.95 * sstep(56.2, 57.6, t);
 };
 const warmth = (t) => sstep(40, 60, t);                                               // the day arrives
-const WHISTLES = [[0.3, 1.2], [3.2, 4.6], [6.3, 7.2], [11.0, 12.0], [15.0, 16.0], [18.0, 19.0], [31.0, 32.3], [40.2, 41.6], [47.0, 49.5], [55.6, 56.4]];   // keeper lips move
+const WHISTLES = [[0.0, 1.4], [7.2, 9.0], [15.2, 17.0], [31.2, 33.0], [40.0, 41.8], [43.2, 44.9], [47.0, 49.0]];   // keeper lips move; matches audio/build.py CLOSE
 const speaking = (t) => { for (const [a, b] of WHISTLES) if (t >= a && t <= b) return Math.sin((t - a) / (b - a) * Math.PI); return 0; };
 
 const P = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -376,14 +376,18 @@ function setTime(t, frame) {
 }
 
 // ----------------------------------------------------------------- on-screen type: the whistles, translated (<= 6 words each)
-const TYPE = { lang: 'en', roles: { display: null, text: null, mono: null }, check: { strings: {}, sizes: { text: 0.042 } } };
+// Newsreader (OFL), files kept in fonts/ (the CDN is blocked here); the italic cut is a second family so Canvas picks it by name
+const TYPE = { lang: 'en', roles: {
+  text: { family: 'Newsreader', files: { 400: 'fonts/newsreader/newsreader-latin-400-normal.woff2' }, subsets: ['latin'] },
+  display: { family: 'Newsreader Italic', files: { 400: 'fonts/newsreader/newsreader-latin-400-italic.woff2' }, subsets: ['latin'] },
+  mono: null }, check: { strings: {}, sizes: { text: 0.042 } } };
 const typeStack = (role) => (TYPE.roles[role] ? `"${TYPE.roles[role].family}", ${TYPE_FALLBACK[role]}` : TYPE_FALLBACK[role]);
 const LINES = [
   { t: [8.0, 10.2], text: "Light's out. Morning.", side: 'L' }, { t: [11.0, 12.8], text: "Morning. Tea's on.", side: 'R' },
   { t: [16.0, 18.0], text: "Wind's turning east.", side: 'L' }, { t: [19.0, 21.0], text: 'Bring the washing in.', side: 'R' },
   { t: [32.0, 34.0], text: "Light's out. Morning.", side: 'L' },
   { t: [41.0, 42.5], text: 'Are you there?', side: 'L' },
-  { t: [49.0, 50.8], text: "Morning. Tea's on.", side: 'R' },
+  { t: [48.3, 50.3], text: "Morning. Tea's on.", side: 'R' },
   { t: [56.0, 57.5], text: 'Morning.', side: 'R', fade: true },
 ];
 function drawLines(g, t) {
@@ -393,8 +397,8 @@ function drawLines(g, t) {
     const fadeIn = Math.min(1, (t - a) / 0.35), fadeOut = Math.min(1, (b - t) / 0.35);
     g.globalAlpha = Math.min(fadeIn, fadeOut) * (it.fade ? 0.55 - 0.3 * sstep(a, b, t) : 1);
     const S = H, size = S * 0.05;
-    g.font = `${it.side === 'R' ? 'italic ' : ''}400 ${size}px ${typeStack('text')}`; g.textAlign = it.side === 'L' ? 'left' : 'right';
-    g.shadowColor = 'rgba(20,18,18,0.55)'; g.shadowBlur = S * 0.012; g.fillStyle = '#f4efe9';
+    g.font = `400 ${size}px ${it.side === 'R' ? typeStack('display') : typeStack('text')}`; g.textAlign = it.side === 'L' ? 'left' : 'right';
+    g.shadowColor = 'rgba(20,18,18,0.8)'; g.shadowBlur = S * 0.016; g.fillStyle = '#f4efe9';
     g.fillText(it.text, it.side === 'L' ? W * 0.07 : W * 0.93, H * 0.885);
   }
   g.restore();

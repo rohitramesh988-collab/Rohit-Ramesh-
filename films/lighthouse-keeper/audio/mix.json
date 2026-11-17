@@ -1,0 +1,54 @@
+{
+  "duration": 60.0,
+  "out": "audio/mix-v1.wav",
+  "layers": [
+    {
+      "file": "audio/stems/sea.wav",
+      "at": 0.0,
+      "gain_db": -17,
+      "bus": "ambience"
+    },
+    {
+      "file": "audio/stems/wind.wav",
+      "at": 0.0,
+      "gain_db": -18,
+      "bus": "ambience"
+    },
+    {
+      "file": "audio/stems/room.wav",
+      "at": 0.0,
+      "gain_db": -14,
+      "bus": "ambience"
+    },
+    {
+      "file": "audio/stems/gulls.wav",
+      "at": 0.0,
+      "gain_db": -4,
+      "bus": "sfx"
+    },
+    {
+      "file": "audio/stems/foley.wav",
+      "at": 0.0,
+      "gain_db": -2,
+      "bus": "foley"
+    },
+    {
+      "file": "audio/stems/music.wav",
+      "at": 0.0,
+      "gain_db": -6,
+      "bus": "music"
+    },
+    {
+      "file": "audio/stems/whistles-close.wav",
+      "at": 0.0,
+      "gain_db": -4,
+      "bus": "dialogue"
+    },
+    {
+      "file": "audio/stems/whistles-far.wav",
+      "at": 0.0,
+      "gain_db": -4,
+      "bus": "dialogue"
+    }
+  ]
+}
